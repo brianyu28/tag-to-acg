@@ -1,1 +1,3 @@
 *.acgo
+.DS_Store
+.vscode
