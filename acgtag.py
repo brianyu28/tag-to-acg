@@ -45,13 +45,21 @@ class Tree:
         self.varname = None  # var name for use for generating lambda expressions
         self.children = children if children is not None else []
 
+        # check for nonadjoining
+        if ACG.is_nonterminal(root) and root.endswith("_NA"):
+            root = root.rstrip("_NA")
+            self.nonadjoining = True
+        else:
+            self.nonadjoining = False
+
         # If root ends with a *, it's a foot node
         if root is not None and root.endswith("*"):
-            self.root = root.rstrip("*")
+            root = root.rstrip("*")
             self.footnode = True
         else:
-            self.root = root
             self.footnode = False
+
+        self.root = root
 
     def __str__(self):
         children = ", ".join(list(map(lambda t: t.__str__(), self.children)))
@@ -109,18 +117,28 @@ class ACG:
         substitution_nodes = []
         
         # Do a DFS of the tree, adding to nodes.
+        footnodeIsNonadjoining = False
         def traverse(tree):
+            nonlocal footnodeIsNonadjoining
             if ACG.is_nonterminal(tree.root) and not tree.footnode:
                 if len(tree.children) > 0:
-                    interior_nodes.append(f"{tree.root}_A")
+                    if not tree.nonadjoining:
+                        interior_nodes.append(f"{tree.root}_A")
                 else:
-                    substitution_nodes.append(f"{tree.root}_S")
+                    if not tree.nonadjoining:
+                        substitution_nodes.append(f"{tree.root}_S")
             for child in tree.children:
                 traverse(child)
+
+            # While doing the DFS, check for a nonadjoining footnode. 
+            if tree.footnode and tree.nonadjoining:
+                footnodeIsNonadjoining = True
         traverse(tree)
 
         if initial:
             root = [f"{tree.root}_S"]
+        elif footnodeIsNonadjoining:
+            root = [f"{tree.root}_A"]
         else:
             root = [f"{tree.root}_A -> {tree.root}_A"]
 
@@ -220,9 +238,11 @@ class ACG:
             tree.varname = f"lvar{i}"
             if ACG.is_nonterminal(tree.root):
                 if len(tree.children) > 0:
-                    interiorVars.append(tree.varname)
+                    if not tree.nonadjoining:
+                        interiorVars.append(tree.varname)
                 else:
-                    substitutionVars.append(tree.varname)
+                    if not tree.nonadjoining:
+                        substitutionVars.append(tree.varname)
                 i += 1
             for child in tree.children:
                 varTraverse(child)
@@ -242,11 +262,17 @@ class ACG:
 
             # If it's a footnode, use special footnode var 'x'
             if tree.footnode:
-                return f"{tree.varname} lvar"
+                if tree.nonadjoining:
+                    return "lvar"
+                else:
+                    return f"{tree.varname} lvar"
 
             # For nonterminal symbols, we need an expression
             childExpressions = ["(" + constructExpression(child) + ")" for child in tree.children]
-            return f"{tree.varname} ({tree.root}_{len(childExpressions)} " + " ".join(childExpressions) + ")"
+            if tree.nonadjoining:
+                return f"({tree.root}_{len(childExpressions)} " + " ".join(childExpressions) + ")"
+            else:
+                return f"{tree.varname} ({tree.root}_{len(childExpressions)} " + " ".join(childExpressions) + ")"
 
         expr = constructExpression(tree)
         return f"{lambdaVars} {expr}"
